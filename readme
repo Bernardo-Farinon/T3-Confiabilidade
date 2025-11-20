@@ -1,4 +1,6 @@
-Placa utilizada -  STM32F072RB
+STM32F072RB
+J-Link v9
+
 # Pinout Jtag - SWD
 
                         ┌───────────┬
