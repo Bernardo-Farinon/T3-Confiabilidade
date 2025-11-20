@@ -34,9 +34,9 @@ J-Link v9
     
     Conectar o J-Link ao PC
         - Verificar que o LED acende
-        - O JLinkExe deve detectar o VTref (ex.: ~3.3V)
+        - O JLinkExe deve detectar o VTref 3.3V
 
-    Abrir o utilitário no terminal:
+    Abrir o utilitario no terminal:
         JLinkExe
 
     Iniciar a conexao:
@@ -54,7 +54,7 @@ J-Link v9
 
     A partir daqui, a comunicacao SWD esta estabelecida.
 
-# Demonstracao prática — SWD com J-Link na STM32F072
+# Demonstracao pratica — SWD com J-Link na STM32F072
 
 Este documento mostra como utilizar o J-Link via SWD para ler registradores, inspecionar memoria, controlar a execucao e acessar informacoes internas do STM32F072RB.
 
