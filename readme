@@ -1,0 +1,149 @@
+# Pinout Jtag - SWD
+
+                        ┌───────────┬
+          Vref 3.3      │  1  |  2  │   Vref 3.3
+         nTRST   ---    │  3  |  4  │   GND
+         TDI     ---    │  5  |  6  │   GND
+         RMS     SWIO   │  7  |  8  │   GND
+         TCK     SWCK   │  9  | 10  │   GND
+         RTCK    ---    │ 11  | 12  │   GND
+         SWO     TDO    │ 13  | 14  │   GND
+            RESET       │ 15  | 16  │   GND
+         DBGRO   ---    │ 17  | 18  │   GND
+            RESET       │ 15  | 16  │   GND
+           5v supply    │ 19  | 20  │   GND   
+                        └───────────┴
+
+# Pinout SWD STM32 CN4
+
+     Nucleo CN4         J-Link/SWD
+        Pin 2 (TCK)  <-->  Pin 9  (SWCLK / TCK)
+        Pin 3 (GND)  <-->  Pin 4  (GND)
+        Pin 4 (TMS)  <-->  Pin 7  (SWDIO / TMS)
+        Pin 5 (NRST) <-->  Pin 15 (nRST)
+        Pin 6 (SWO)  <-->  Pin 13 (SWO / TDO)
+        Any Vdd Pin  <-->  Pin 1  (VTref)
+
+
+# J-Link setup
+
+    Instalar o software oficial da Segger
+    
+    Conectar o J-Link ao PC
+        - Verificar que o LED acende
+        - O JLinkExe deve detectar o VTref (ex.: ~3.3V)
+
+    Abrir o utilitário no terminal:
+        JLinkExe
+
+    Iniciar a conexao:
+        connect
+
+        configurar:
+            Device> STM32F072RB
+            TIF> S             (selecionar SWD)
+            Speed> 4000        (ou default)
+
+    Verificar mensagem de conexao bem-sucedida:
+        - "SWD selected"
+        - "Found SW-DP"
+        - "Cortex-M0 identified"
+
+    A partir daqui, a comunicacao SWD esta estabelecida.
+
+# Demonstracao prática — SWD com J-Link na STM32F072
+
+Este documento mostra como utilizar o J-Link via SWD para ler registradores, inspecionar memoria, controlar a execucao e acessar informacoes internas do STM32F072RB.
+
+
+## 1. Identificando o nucleo ARM (CPUID)
+
+J-Link>mem32 0xE000ED00 1
+E000ED00 = 410CC200
+
+Saida:
+- 0x41 → ARM  
+- 0x0C → Cortex-M0  
+- 0xC2 → Revisao  
+- 0x00 → Variante  
+
+
+## 2. Status do bloco de debug (DHCSR)
+
+J-Link>halt
+J-Link>mem32 0xE000EDF0 1
+E000EDF0 = 00030003 
+
+J-Link>go
+J-Link>mem32 0xE000EDF0 1
+E000EDF0 = 01000001 
+
+
+Mostra se o core está halted/running
+
+
+## 3. Tamanho real da Flash
+
+J-Link>mem32 0x1FFFF7CC 1
+1FFFF7CC = FFFF0080
+
+Saida:
+- Bits superiores: reservados  
+- Bits 15:0 = 0x0080 = **128 KB**
+
+
+## 4. Unique ID do microcontrolador (96 bits)
+
+J-Link>mem32 0x1FFFF7AC 3
+1FFFF7AC = 003B004D 53465710 20343231
+
+Retorna o ID unico gravado em fabrica.
+
+
+## 5. Registradores da CPU
+
+J-Link>regs
+PC = 08000112, CycleCnt = 00000000
+R0 = 00030D40, R1 = 00000020, R2 = 000030D0, R3 = 000030D1
+R4 = 2000001C, R5 = FFFFFFFF, R6 = FFFFFFFF, R7 = 20003FE8
+R8 = FFFFFFFF, R9 = FFFFFFFF, R10= FFFFFFFF, R11= FFFFFFFF
+R12= FFFFFFFF
+SP(R13)= 20003FE8, MSP= 20003FE8, PSP= FFFFFFFC
+R14(LR) = 0800017B
+XPSR = 21000000
+
+Mostra PC, SP, LR, flags e todos os registradores gerais.
+
+
+## 6. Controle da execucao via SWD
+
+r → reset
+halt → pausa o core
+go → continua a execucao
+
+
+## 7. Variavel em endereco fixo (0x20001000)
+
+O app salva um contador em RAM neste endereco.
+
+J-Link>mem32 0x20001000 1
+20001000 = 12345BD8
+J-Link>mem32 0x20001000 1
+20001000 = 12345BDE
+J-Link>mem32 0x20001000 1
+20001000 = 12345BE2
+
+Valor muda → CPU executando.
+
+
+Halt congela o programa
+
+J-Link>halt
+J-Link>mem32 0x20001000 1
+20001000 = 12345BFA
+J-Link>mem32 0x20001000 1
+20001000 = 12345BFA
+J-Link>mem32 0x20001000 1
+20001000 = 12345BFA
+
+Valor nao muda → CPU parada.
