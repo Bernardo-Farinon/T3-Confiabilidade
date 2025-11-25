@@ -1,0 +1,250 @@
+\documentclass[12pt]{article}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage{listings}
+\usepackage{graphicx}
+
+\onehalfspacing
+\setlength{\parindent}{1.25cm}
+
+\title{\textbf{Relatório — JTAG e SWD com J-Link v9 no STM32F072RB}}
+\author{Bernardo Farinon}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introdução}
+
+Este relatório apresenta um estudo teórico e prático sobre o funcionamento do padrão \textbf{JTAG} (IEEE~1149.1) e sua alternativa \textbf{SWD} (Serial Wire Debug), amplamente utilizada em microcontroladores ARM.
+
+O trabalho inclui:
+
+\begin{itemize}
+    \item uma explicação detalhada da arquitetura interna do JTAG, seus registradores e sinais de operação;
+    \item uma análise conceitual do SWD e suas diferenças em relação ao JTAG;
+    \item uma demonstração prática utilizando um \textbf{J-Link v9} conectado à placa \textbf{STM32F072RB}, explorando leitura de registradores, controle da execução e manipulação da memória.
+\end{itemize}
+
+\section{Motivação para JTAG}
+
+A complexidade crescente dos circuitos integrados tornou extremamente difícil a inspeção física com sondas tradicionais, devido ao grande número de pinos e às interconexões internas não acessíveis externamente. Isso motivou a criação de um padrão capaz de:
+
+\begin{itemize}
+    \item testar interconexões internas sem acesso físico;
+    \item verificar soldas e continuidade em placas complexas;
+    \item depurar sistemas embarcados sem interferir no funcionamento da CPU;
+    \item padronizar o acesso a dispositivos durante testes de fábrica.
+\end{itemize}
+
+Assim surgiu o \textbf{JTAG — Joint Test Action Group}, oferecendo um mecanismo de acesso eletrônico interno ao chip para fins de teste e depuração.
+
+\section{Arquitetura e Funcionamento do JTAG}
+
+A interface JTAG utiliza 4--5 sinais externos (TCK, TMS, TDI, TDO e TRST) e controla uma estrutura interna composta por registradores de instrução, registradores de dados e uma máquina de estados denominada \textbf{TAP Controller}. A Figura~\ref{fig:jtag_arch} ilustra essa arquitetura integrada ao chip.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.95\textwidth]{jtagchip.png}
+    \caption{Arquitetura interna do JTAG no chip}
+    \label{fig:jtag_arch}
+\end{figure}
+
+\subsection{Descrição da Figura}
+
+Na imagem apresentada:
+
+\begin{itemize}
+    \item As regiões em \textbf{verde} representam o \textbf{Boundary Scan}, composto por várias Boundary Scan Cells conectadas em série ao redor dos pinos físicos do chip. Esse conjunto forma o \textit{Boundary Scan Register}, utilizado para teste fisico de placas.
+    \item As regiões em \textbf{vermelho} (``Debug CTRL'' e ``Flash CTRL'') correspondem a módulos internos da CPU que podem ser acessados via JTAG, dependendo da implementação. Esses blocos permitem depuração e programação da memória Flash.
+    \item A região em \textbf{rosa} representa o \textbf{TAP (Test Access Port)}, contendo:
+    \begin{itemize}
+        \item o \textbf{TAP Controller} (máquina de estados controlada por TMS);
+        \item o \textbf{Instruction Register (IR)};
+        \item os \textbf{Data Registers (DR)}, como BYPASS, IDCODE e o próprio Boundary Scan.
+    \end{itemize}
+\end{itemize}
+
+O TAP atua como ``roteador'' interno, conectando o caminho \textbf{TDI → IR/DR → TDO} conforme a instrução selecionada.
+
+\subsection{Sinais JTAG}
+
+\begin{itemize}
+    \item \textbf{TCK}: clock da interface.
+    \item \textbf{TMS}: controla as transições da máquina de estados.
+    \item \textbf{TDI}: entrada serial de instruções e dados.
+    \item \textbf{TDO}: saída serial de instruções e dados.
+    \item \textbf{TRST} (opcional): reset assíncrono do TAP.
+\end{itemize}
+
+\subsection{TAP Controller}
+
+O \textbf{TAP Controller} é uma máquina de estados síncrona que coordena todo o fluxo de operação. Ele controla:
+
+\begin{itemize}
+    \item o carregamento de instruções no IR;
+    \item a seleção dos Data Registers;
+    \item captura e atualização de valores;
+    \item habilitação das operações de boundary scan.
+\end{itemize}
+
+\subsection{Instruction Register (IR)}
+
+O IR define qual \textbf{Data Register (DR)} participará da scan-chain. Exemplos de instruções:
+
+\begin{itemize}
+    \item \textbf{IDCODE}: retorna o identificador do chip;
+    \item \textbf{BYPASS}: reduz a cadeia para 1 bit, útil em cadeias multiprocessadas;
+    \item \textbf{EXTEST / SAMPLE}: utilizam o Boundary Scan.
+\end{itemize}
+
+\subsection{Boundary Scan}
+
+As células de boundary scan são inseridas entre o pino físico e a lógica interna do chip. Elas permitem:
+
+\begin{itemize}
+    \item Capturar estados dos pinos sem interrupção do funcionamento normal;
+    \item Injetar valores para teste de trilhas e conexões externas;
+    \item Testar placas com encapsulamentos BGA, onde sondagem física é inviável.
+\end{itemize}
+
+Esse mecanismo é fundamental em \textbf{DFT — Design for Testability}.
+
+\section{SWD: Diferenças e Funcionamento}
+
+O \textbf{Serial Wire Debug (SWD)} é uma alternativa desenvolvida pela ARM para substituir o JTAG em microcontroladores Cortex.  
+Enquanto o JTAG possui foco em testabilidade e depuração, o SWD concentra-se exclusivamente na depuração da CPU.
+
+\subsection{Características do SWD}
+
+\begin{itemize}
+    \item Utiliza apenas \textbf{dois fios}: SWCLK e SWDIO.
+    \item Mantém as mesmas capacidades de depuração do JTAG.
+    \item Permite leitura/escrita de registradores, memória e periféricos.
+    \item Permite controle total da CPU: breakpoints, \textit{halt}, \textit{step}, \textit{reset}.
+    \item Não possui boundary scan.
+\end{itemize}
+
+\section{Aplicação prática do SWD com J-Link v9 no STM32F072RB}
+
+A seguir apresenta-se a demonstração prática utilizando o J-Link v9 e o microcontrolador STM32F072RB.
+
+\subsection{Pinout JTAG do J-Link v9}
+
+\begin{verbatim}
+                        ┌───────────┬
+          Vref 3.3      │  1  |  2  │   Vref 3.3
+         nTRST   ---    │  3  |  4  │   GND
+         TDI     ---    │  5  |  6  │   GND
+         RMS     SWIO   │  7  |  8  │   GND
+         TCK     SWCK   │  9  | 10  │   GND
+         RTCK    ---    │ 11  | 12  │   GND
+         TDO     SWO    │ 13  | 14  │   GND
+            RESET       │ 15  | 16  │   GND
+         DBGRO   ---    │ 17  | 18  │   GND
+           5v supply    │ 19  | 20  │   GND
+                        └───────────┴
+\end{verbatim}
+
+\subsection{Pinout SWD da placa STM32 (CN4)}
+
+\begin{verbatim}
+Nucleo CN4         J-Link/SWD
+Pin 2 (TCK)  <-->  Pin 9  (SWCLK / TCK)
+Pin 3 (GND)  <-->  Pin 4  (GND)
+Pin 4 (TMS)  <-->  Pin 7  (SWDIO / TMS)
+Pin 5 (NRST) <-->  Pin 15 (nRST)
+Pin 6 (SWO)  <-->  Pin 13 (SWO / TDO)
+Vdd          <-->  Pin 1  (VTref)
+\end{verbatim}
+
+\subsection{Configuração do J-Link}
+
+\begin{verbatim}
+JLinkExe
+Device> STM32F072RB
+TIF> S
+Speed> 4000
+\end{verbatim}
+
+\subsection{Identificação do núcleo ARM}
+
+\begin{verbatim}
+mem32 0xE000ED00 1
+E000ED00 = 410CC200
+
+Saida:
+- 0x41 → ARM  
+- 0x0C → Cortex-M0  
+- 0xC2 → Revisao  
+- 0x00 → Variante  
+\end{verbatim}
+
+\subsection{Status do módulo de debug (DHCSR)}
+
+\begin{verbatim}
+halt
+mem32 0xE000EDF0 -> 00030003
+
+go
+mem32 0xE000EDF0 -> 01000001
+\end{verbatim}
+
+\subsection{Tamanho da Flash}
+
+\begin{verbatim}
+mem32 0x1FFFF7CC 1
+1FFFF7CC = FFFF0080
+
+Saida:
+- Bits superiores: reservados  
+- Bits 15:0 = 0x0080 = **128 KB**
+\end{verbatim}
+
+\subsection{Unique ID}
+
+\begin{verbatim}
+mem32 0x1FFFF7AC 3
+1FFFF7AC = 003B004D 53465710 20343231
+\end{verbatim}
+
+\subsection{Leitura de registradores da CPU}
+
+\begin{verbatim}
+regs
+PC, LR, SP, R0..R12, XPSR...
+\end{verbatim}
+
+\subsection{Leitura da RAM}
+
+\begin{verbatim}
+mem32 0x20001000 1
+20001000 = 12345BD8
+\end{verbatim}
+
+\subsection{Pausa da CPU}
+
+\begin{verbatim}
+halt
+20001000 = 12345BFA
+20001000 = 12345BFA
+\end{verbatim}
+
+\subsection{Escrita manual na RAM}
+
+\begin{verbatim}
+w4 0x20001000 00000000
+20001000 = 00000000
+\end{verbatim}
+
+\section{Conclusão}
+
+O JTAG permanece essencial para testabilidade estrutural, principalmente pelo uso do boundary scan.  
+O SWD, por outro lado, simplifica a depuração de microcontroladores ARM ao reduzir o número de pinos, mantendo as mesmas capacidades de acesso ao núcleo.
+
+O trabalho integra conceitos de DFT, depuração moderna e uso real de ferramentas profissionais como o J-Link v9, consolidando teoria e prática de maneira eficiente.
+
+\end{document}
