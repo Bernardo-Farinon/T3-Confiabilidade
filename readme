@@ -150,3 +150,13 @@ J-Link>mem32 0x20001000 1
 20001000 = 12345BFA
 
 Valor nao muda → CPU parada.
+
+## 7. Escrever em endereco fixo (0x20001000)
+
+J-Link>mem32 0x20001000 1
+20001000 = 21E873E8 
+J-Link>w4 0x20001000 00000000
+Writing 00000000 -> 20001000
+J-Link>mem32 0x20001000 1
+20001000 = 00000000 
+
